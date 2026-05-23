@@ -1,0 +1,36 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - GO111MODULE=on
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+checksum:
+  name_template: checksums.txt
+
+archives:
+  - format: binary
+    name_template: '{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}'
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  draft: true
