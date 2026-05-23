@@ -235,9 +235,13 @@ func parseMsgURL(u string) (chatID int64, msgID int, err error) {
 }
 
 // resolvePeer resolves a chat string to an InputPeer.
-// Accepts: @username, username, or numeric ID (-100xxx for channels, -xxx for groups).
+// Accepts: me/self (Saved Messages), @username, username, or numeric ID.
 func resolvePeer(ctx context.Context, api *tg.Client, chat string) (tg.InputPeerClass, error) {
 	chat = strings.TrimPrefix(chat, "@")
+
+	if chat == "me" || chat == "self" {
+		return &tg.InputPeerSelf{}, nil
+	}
 
 	if id, err := strconv.ParseInt(chat, 10, 64); err == nil {
 		if id < -1000000000000 {
