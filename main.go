@@ -144,9 +144,7 @@ func deleteChannelMessages(ctx context.Context, e *extension.Extension, api *tg.
 	inputChannel := &tg.InputChannel{ChannelID: chatID}
 
 	// fetch access hash
-	ch, err := api.ChannelsGetChannels(ctx, &tg.ChannelsGetChannelsRequest{
-		ID: []tg.InputChannelClass{inputChannel},
-	})
+	ch, err := api.ChannelsGetChannels(ctx, []tg.InputChannelClass{inputChannel})
 	if err == nil {
 		if chats := ch.GetChats(); len(chats) > 0 {
 			if channel, ok := chats[0].(*tg.Channel); ok {
