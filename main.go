@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -50,6 +52,7 @@ func rootCmd(ctx context.Context, e *extension.Extension) *cobra.Command {
 		chatFlag   string
 		msgIDs     []int
 		revokeFlag bool
+		dryRunFlag bool
 	)
 
 	cmd.Flags().StringArrayVar(&fromFiles, "from", nil, "tdl chat export JSON file(s)")
@@ -57,6 +60,7 @@ func rootCmd(ctx context.Context, e *extension.Extension) *cobra.Command {
 	cmd.Flags().StringVar(&chatFlag, "chat", "", "Chat username, numeric ID, or 'me'")
 	cmd.Flags().IntSliceVar(&msgIDs, "id", nil, "Message ID(s) (with --chat)")
 	cmd.Flags().BoolVar(&revokeFlag, "revoke", true, "Revoke for all users")
+	cmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "Show messages that would be deleted without deleting them")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		api := e.Client().API()
@@ -90,16 +94,7 @@ func rootCmd(ctx context.Context, e *extension.Extension) *cobra.Command {
 			case *tg.InputPeerChannel:
 				byChat[p.ChannelID] = append(byChat[p.ChannelID], msgIDs...)
 			case *tg.InputPeerSelf, *tg.InputPeerChat, *tg.InputPeerUser:
-				affected, err := api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
-					Revoke: revokeFlag,
-					ID:     msgIDs,
-				})
-				if err != nil {
-					return errors.Wrap(err, "delete messages")
-				}
-				_ = affected
-				fmt.Printf("Deleted %d message(s)\n", len(msgIDs))
-				return nil
+				return deletePeerMessages(ctx, api, cmd.OutOrStdout(), chatFlag, msgIDs, revokeFlag, dryRunFlag)
 			}
 		}
 
@@ -107,19 +102,68 @@ func rootCmd(ctx context.Context, e *extension.Extension) *cobra.Command {
 			return errors.New("no messages specified; use --from, --url, or --chat + --id")
 		}
 
-		total := 0
-		for chatID, ids := range byChat {
-			n, err := deleteChannelMessages(ctx, api, chatID, ids, revokeFlag)
-			if err != nil {
-				return err
-			}
-			total += n
-		}
-		fmt.Printf("Deleted %d message(s)\n", total)
-		return nil
+		return executeDelete(ctx, api, cmd.OutOrStdout(), byChat, revokeFlag, dryRunFlag)
 	}
 
 	return cmd
+}
+
+func deletePeerMessages(ctx context.Context, api *tg.Client, out io.Writer, peer string, ids []int, revoke, dryRun bool) error {
+	if dryRun {
+		fmt.Fprintf(out, "Would delete %d message(s) from %s: %s (revoke=%t)\n", len(ids), peer, formatIDs(ids), revoke)
+		fmt.Fprintf(out, "Dry run: would delete %d message(s); no messages were deleted\n", len(ids))
+		return nil
+	}
+
+	affected, err := api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+		Revoke: revoke,
+		ID:     ids,
+	})
+	if err != nil {
+		return errors.Wrap(err, "delete messages")
+	}
+	_ = affected
+	fmt.Fprintf(out, "Deleted %d message(s)\n", len(ids))
+	return nil
+}
+
+func executeDelete(ctx context.Context, api *tg.Client, out io.Writer, byChat map[int64][]int, revoke, dryRun bool) error {
+	chatIDs := make([]int64, 0, len(byChat))
+	for chatID := range byChat {
+		chatIDs = append(chatIDs, chatID)
+	}
+	sort.Slice(chatIDs, func(i, j int) bool { return chatIDs[i] < chatIDs[j] })
+
+	total := 0
+	for _, chatID := range chatIDs {
+		ids := byChat[chatID]
+		if dryRun {
+			fmt.Fprintf(out, "Would delete %d message(s) from chat %d: %s (revoke=%t)\n", len(ids), chatID, formatIDs(ids), revoke)
+			total += len(ids)
+			continue
+		}
+
+		n, err := deleteChannelMessages(ctx, api, chatID, ids, revoke)
+		if err != nil {
+			return err
+		}
+		total += n
+	}
+
+	if dryRun {
+		fmt.Fprintf(out, "Dry run: would delete %d message(s); no messages were deleted\n", total)
+	} else {
+		fmt.Fprintf(out, "Deleted %d message(s)\n", total)
+	}
+	return nil
+}
+
+func formatIDs(ids []int) string {
+	values := make([]string, len(ids))
+	for i, id := range ids {
+		values[i] = strconv.Itoa(id)
+	}
+	return strings.Join(values, ",")
 }
 
 func deleteChannelMessages(ctx context.Context, api *tg.Client, chatID int64, ids []int, revoke bool) (int, error) {

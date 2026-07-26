@@ -43,6 +43,15 @@ tdl delete --chat me --id 73767
 tdl delete --from export.json --url https://t.me/c/1234567890/99
 ```
 
+### Preview without deleting
+
+Add `--dry-run` to parse the inputs and show the exact chat and message IDs that would be deleted. No delete request is sent, and the summary explicitly confirms that nothing was deleted.
+
+```bash
+tdl delete --from export.json --dry-run
+tdl delete --chat me --id 73767 --dry-run
+```
+
 ## Flags
 
 | Flag | Description | Default |
@@ -52,6 +61,7 @@ tdl delete --from export.json --url https://t.me/c/1234567890/99
 | `--chat` | Chat username, numeric ID, or `me` | |
 | `--id` | Message IDs, comma-separated (used with `--chat`) | |
 | `--revoke` | Delete for all users | `true` |
+| `--dry-run` | Preview the exact messages without deleting | `false` |
 
 ## Build from source
 
